@@ -1,12 +1,10 @@
 import os
-import shutil
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, status
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 from typing import List
-from app.database import get_db
-from app import models, schemas
+from app import schemas
 from app.auth import get_current_user
+from app.models import User, Job, Candidate
 from app.services.resume_service import process_resume
 
 router = APIRouter(tags=["Resumes"])
@@ -22,17 +20,16 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc"}
 
 @router.post("/upload-resumes", status_code=status.HTTP_201_CREATED)
 async def upload_resumes(
-    job_id: int = Form(...),
+    job_id: str = Form(...),
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Bulk upload resumes (PDF/DOCX) and run the ML pipeline."""
     # Validate job exists and belongs to current recruiter
-    job = db.query(models.Job).filter(
-        models.Job.id == job_id,
-        models.Job.owner_id == current_user.id,
-    ).first()
+    job = await Job.find_one(
+        Job.id == job_id,
+        Job.owner_id == str(current_user.id),
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -46,10 +43,10 @@ async def upload_resumes(
             continue
 
         try:
-            candidate = await process_resume(file=file, job=job, db=db)
+            candidate = await process_resume(file=file, job=job)
             results.append({
                 "file": file.filename,
-                "candidate_id": candidate.id,
+                "candidate_id": str(candidate.id),
                 "name": candidate.name,
                 "final_score": round(candidate.final_score, 4),
                 "shortlist_category": candidate.shortlist_category,
@@ -66,17 +63,20 @@ async def upload_resumes(
 
 
 @router.get("/resumes/{candidate_id}/file")
-def serve_resume_file(
-    candidate_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+async def serve_resume_file(
+    candidate_id: str,
+    current_user: User = Depends(get_current_user),
 ):
     """Serve the original resume file for the PDF viewer."""
-    candidate = db.query(models.Candidate).filter(
-        models.Candidate.id == candidate_id
-    ).first()
+    candidate = await Candidate.get(candidate_id)
     if not candidate or not candidate.resume_path:
         raise HTTPException(status_code=404, detail="Resume file not found")
+        
+    # Verify job ownership via Candidate ID
+    job = await Job.find_one(Job.id == candidate.job_id, Job.owner_id == str(current_user.id))
+    if not job:
+        raise HTTPException(status_code=403, detail="Access denied to this resume")
+
     if not os.path.exists(candidate.resume_path):
         raise HTTPException(status_code=404, detail="Resume file missing from storage")
 

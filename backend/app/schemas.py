@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Any
+from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict
+from typing import List, Optional, Any, Annotated
 from datetime import datetime
 
+# Helper to convert MongoDB ObjectId to string
+PyObjectId = Annotated[str, BeforeValidator(str)]
 
 # ──────────────────────────────────────────────────
 # AUTH SCHEMAS
@@ -20,14 +22,13 @@ class UserLogin(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: int
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: PyObjectId = Field(alias="_id")
     email: str
     full_name: Optional[str]
     role: str
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class Token(BaseModel):
@@ -48,8 +49,10 @@ class JobCreate(BaseModel):
 
 
 class JobOut(BaseModel):
-    id: int
-    owner_id: int
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: PyObjectId = Field(alias="_id")
+    owner_id: str
     title: str
     description: str
     required_skills: List[str]
@@ -57,17 +60,16 @@ class JobOut(BaseModel):
     created_at: datetime
     candidate_count: Optional[int] = 0
 
-    class Config:
-        from_attributes = True
-
 
 # ──────────────────────────────────────────────────
 # CANDIDATE SCHEMAS
 # ──────────────────────────────────────────────────
 
 class CandidateOut(BaseModel):
-    id: int
-    job_id: int
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: PyObjectId = Field(alias="_id")
+    job_id: str
     name: Optional[str]
     email: Optional[str]
     phone: Optional[str]
@@ -85,12 +87,9 @@ class CandidateOut(BaseModel):
     shortlist_category: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class CandidateFilter(BaseModel):
-    job_id: Optional[int] = None
+    job_id: Optional[str] = None
     status: Optional[str] = None
     min_score: Optional[float] = None
     max_score: Optional[float] = None

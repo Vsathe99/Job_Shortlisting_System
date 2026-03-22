@@ -8,15 +8,16 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import engine, Base
+from app.db import init_db
 from app.api import auth, jobs, resumes, candidates, analytics
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle events."""
-    # Create DB tables
-    Base.metadata.create_all(bind=engine)
+    # Initialize MongoDB/Beanie
+    await init_db()
+    print("[STARTUP] MongoDB/Beanie initialized.")
 
     # Initialize FAISS index
     try:

@@ -1,30 +1,30 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException
 from collections import Counter
-from app.database import get_db
-from app import models, schemas
+from app import schemas
 from app.auth import get_current_user
+from app.models import User, Job, Candidate
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 @router.get("", response_model=schemas.AnalyticsOut)
-def get_analytics(
-    job_id: int = None,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+async def get_analytics(
+    job_id: str = None,
+    current_user: User = Depends(get_current_user),
 ):
     """Return aggregated recruitment analytics for the current recruiter."""
-    base_query = (
-        db.query(models.Candidate)
-        .join(models.Job)
-        .filter(models.Job.owner_id == current_user.id)
-    )
+    
+    # 1. Determine which candidates are accessible
     if job_id:
-        base_query = base_query.filter(models.Candidate.job_id == job_id)
-
-    candidates = base_query.all()
+        # Verify job ownership
+        job = await Job.find_one(Job.id == job_id, Job.owner_id == str(current_user.id))
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        candidates = await Candidate.find(Candidate.job_id == job_id).to_list()
+    else:
+        owned_jobs = await Job.find(Job.owner_id == str(current_user.id)).to_list()
+        job_ids = [str(j.id) for j in owned_jobs]
+        candidates = await Candidate.find({"job_id": {"$in": job_ids}}).to_list()
 
     total_resumes = len(candidates)
     total_shortlisted = sum(1 for c in candidates if c.candidate_status == "shortlisted")
@@ -37,7 +37,7 @@ def get_analytics(
         else 0.0
     )
 
-    # Top skills distribution
+    # 2. Top skills distribution
     all_skills = []
     for c in candidates:
         if c.skills:
@@ -48,7 +48,7 @@ def get_analytics(
         for skill, count in skill_counter.most_common(15)
     ]
 
-    # Score distribution buckets
+    # 3. Score distribution buckets
     buckets = {"0-25": 0, "25-50": 0, "50-75": 0, "75-100": 0}
     for c in candidates:
         score = c.final_score * 100
@@ -62,20 +62,20 @@ def get_analytics(
             buckets["75-100"] += 1
     score_distribution = [{"range": k, "count": v} for k, v in buckets.items()]
 
-    # Candidates by status
+    # 4. Candidates by status
     status_counter = Counter(c.candidate_status for c in candidates)
     candidates_by_status = [
         {"status": k, "count": v} for k, v in status_counter.items()
     ]
 
-    # Candidates per job
+    # 5. Candidates per job
     job_counter = Counter(c.job_id for c in candidates)
-    jobs = {j.id: j.title for j in db.query(models.Job).filter(
-        models.Job.owner_id == current_user.id
-    ).all()}
+    owned_jobs_list = await Job.find(Job.owner_id == str(current_user.id)).to_list()
+    job_titles = {str(j.id): j.title for j in owned_jobs_list}
+    
     candidates_by_job = [
-        {"job": jobs.get(job_id, f"Job #{job_id}"), "count": count}
-        for job_id, count in job_counter.items()
+        {"job": job_titles.get(jid, f"Job #{jid}"), "count": count}
+        for jid, count in job_counter.items()
     ]
 
     return schemas.AnalyticsOut(

@@ -1,15 +1,8 @@
-"""
-Resume Processing Service — Orchestrates the full ML pipeline for each uploaded resume.
-Pipeline: save file → extract raw text → parse fields → extract skills →
-          preprocess → embed resume + job → cosine similarity →
-          skill match → rank → save to DB → add to FAISS
-"""
 import os
 import uuid
 from fastapi import UploadFile
-from sqlalchemy.orm import Session
-from app import models
 from app.config import settings
+from app.models import Job, Candidate
 from app.ml.resume_parser import parse_resume
 from app.ml.preprocessing import preprocess_text
 from app.ml.skill_extractor import extract_skills_from_text, compute_skill_match
@@ -21,12 +14,11 @@ from app.services.faiss_service import faiss_service
 
 async def process_resume(
     file: UploadFile,
-    job: models.Job,
-    db: Session,
-) -> models.Candidate:
+    job: Job,
+) -> Candidate:
     """
     Full ML pipeline for a single uploaded resume file.
-    Returns the persisted Candidate ORM object.
+    Returns the persisted Candidate document.
     """
     # ── 1. Read file bytes and save to storage ──────────────────────────
     file_bytes = await file.read()
@@ -39,6 +31,7 @@ async def process_resume(
         f.write(file_bytes)
 
     # ── 2. Extract raw text + structured fields ──────────────────────────
+    # Note: parse_resume is likely synchronous, fine for now if it's fast enough
     raw_text, parsed = parse_resume(file_bytes, file.filename)
 
     # ── 3. Extract skills from resume ────────────────────────────────────
@@ -65,8 +58,8 @@ async def process_resume(
     final_score, category = rank_and_categorize(semantic_sim, skill_score)
 
     # ── 9. Save candidate to database ────────────────────────────────────
-    candidate = models.Candidate(
-        job_id=job.id,
+    candidate = Candidate(
+        job_id=str(job.id),
         name=parsed.get("name"),
         email=parsed.get("email"),
         phone=parsed.get("phone"),
@@ -85,13 +78,11 @@ async def process_resume(
         candidate_status="new",
         shortlist_category=category,
     )
-    db.add(candidate)
-    db.commit()
-    db.refresh(candidate)
+    await candidate.insert()
 
     # ── 10. Add embedding to FAISS index ─────────────────────────────────
     try:
-        faiss_service.add_vector(candidate.id, resume_embedding)
+        faiss_service.add_vector(str(candidate.id), resume_embedding)
     except Exception as e:
         print(f"[FAISS] Warning: could not add vector for candidate {candidate.id}: {e}")
 

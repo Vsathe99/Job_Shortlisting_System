@@ -14,14 +14,29 @@ api.interceptors.request.use((config) => {
     return config
 })
 
-// Global 401 handler
+// Global Error Handler
 api.interceptors.response.use(
     (response) => response,
     (error) => {
+        // Handle 401 Unauthorized
         if (error.response?.status === 401) {
             localStorage.removeItem('ats_token')
-            window.location.href = '/login'
+            if (!window.location.pathname.includes('/login')) {
+                window.location.href = '/login'
+            }
         }
+
+        // Format Pydantic/FastAPI validation errors
+        if (error.response?.data?.detail) {
+            const detail = error.response.data.detail
+            if (Array.isArray(detail)) {
+                // Transform Pydantic V2 error list into a single string
+                error.response.data.detail = detail
+                    .map(err => `${err.loc.join('.')}: ${err.msg}`)
+                    .join(' | ')
+            }
+        }
+
         return Promise.reject(error)
     }
 )

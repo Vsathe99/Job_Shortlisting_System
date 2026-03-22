@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
-    # Database
-    DATABASE_URL: str = "sqlite:///./ats.db"
+    # Database (MongoDB)
+    MONGODB_URL: str = "mongodb://mongodb:27017/ats_db"
 
     # Storage
     STORAGE_DIR: str = "storage"

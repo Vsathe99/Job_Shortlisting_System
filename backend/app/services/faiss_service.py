@@ -1,8 +1,3 @@
-"""
-FAISS Service — Persistent vector index management.
-Stores candidate_id → embedding vector mappings.
-Supports add, remove, search, save, load.
-"""
 import os
 import json
 import numpy as np
@@ -17,8 +12,8 @@ class FAISSService:
 
     def __init__(self):
         self.index = None
-        self.id_map: Dict[int, int] = {}     # candidate_id → faiss_internal_idx
-        self.vectors: Dict[int, np.ndarray] = {}  # candidate_id → vector
+        self.id_map: Dict[str, int] = {}     # candidate_id (str) → faiss_internal_idx (int)
+        self.vectors: Dict[str, np.ndarray] = {}  # candidate_id (str) → vector
         self._initialized = False
 
     def initialize(self):
@@ -29,13 +24,16 @@ class FAISSService:
                 self.index = faiss.read_index(settings.FAISS_INDEX_PATH)
                 with open(settings.FAISS_METADATA_PATH, "r") as f:
                     meta = json.load(f)
-                self.id_map = {int(k): v for k, v in meta.get("id_map", {}).items()}
-                # Rebuild vector store from stored numpy arrays (if available)
+                # Ensure keys are strings
+                self.id_map = {str(k): v for k, v in meta.get("id_map", {}).items()}
+                
+                # Rebuild vector store from stored numpy arrays
                 vectors_path = settings.FAISS_INDEX_PATH + ".npy"
                 if os.path.exists(vectors_path):
                     all_vecs = np.load(vectors_path, allow_pickle=True).item()
-                    self.vectors = {int(k): v for k, v in all_vecs.items()}
-            except Exception:
+                    self.vectors = {str(k): v for k, v in all_vecs.items()}
+            except Exception as e:
+                print(f"[FAISS] Load error, creating new: {e}")
                 self._create_new_index(faiss)
         else:
             self._create_new_index(__import__("faiss"))
@@ -43,11 +41,11 @@ class FAISSService:
 
     def _create_new_index(self, faiss):
         """Create a new flat L2 FAISS index."""
-        self.index = faiss.IndexFlatIP(EMBEDDING_DIM)  # Inner product (cosine for normalized vecs)
+        self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
         self.id_map = {}
         self.vectors = {}
 
-    def add_vector(self, candidate_id: int, vector: np.ndarray):
+    def add_vector(self, candidate_id: str, vector: np.ndarray):
         """Add a vector to the index and persist."""
         if not self._initialized:
             self.initialize()
@@ -55,20 +53,22 @@ class FAISSService:
         vec = vector.reshape(1, EMBEDDING_DIM).astype(np.float32)
         internal_idx = self.index.ntotal
         self.index.add(vec)
-        self.id_map[candidate_id] = internal_idx
-        self.vectors[candidate_id] = vector.astype(np.float32)
+        self.id_map[str(candidate_id)] = internal_idx
+        self.vectors[str(candidate_id)] = vector.astype(np.float32)
         self._save()
 
-    def remove_vector(self, candidate_id: int):
+    def remove_vector(self, candidate_id: str):
         """Remove a candidate's vector. Rebuilds index without that candidate."""
         if not self._initialized:
             self.initialize()
-        if candidate_id not in self.vectors:
+        
+        cid_str = str(candidate_id)
+        if cid_str not in self.vectors:
             return
 
-        del self.vectors[candidate_id]
-        if candidate_id in self.id_map:
-            del self.id_map[candidate_id]
+        del self.vectors[cid_str]
+        if cid_str in self.id_map:
+            del self.id_map[cid_str]
 
         self._rebuild_index()
         self._save()
@@ -83,7 +83,7 @@ class FAISSService:
             self.id_map[cid] = self.index.ntotal
             self.index.add(arr)
 
-    def search(self, query_vector: np.ndarray, top_k: int = 10) -> List[Tuple[int, float]]:
+    def search(self, query_vector: np.ndarray, top_k: int = 10) -> List[Tuple[str, float]]:
         """
         Search for top-k similar candidates.
         Returns list of (candidate_id, similarity_score).
@@ -111,10 +111,10 @@ class FAISSService:
             os.makedirs(settings.STORAGE_DIR, exist_ok=True)
             faiss.write_index(self.index, settings.FAISS_INDEX_PATH)
             with open(settings.FAISS_METADATA_PATH, "w") as f:
-                json.dump({"id_map": {str(k): v for k, v in self.id_map.items()}}, f)
+                json.dump({"id_map": self.id_map}, f)
             np.save(
                 settings.FAISS_INDEX_PATH + ".npy",
-                {str(k): v for k, v in self.vectors.items()},
+                self.vectors,
             )
         except Exception as e:
             print(f"[FAISS] Save warning: {e}")
