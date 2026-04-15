@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from typing import List
+from beanie import PydanticObjectId
 from app import schemas
 from app.auth import get_current_user
 from app.models import User, Job, Candidate
@@ -45,7 +46,7 @@ async def get_job(
     current_user: User = Depends(get_current_user),
 ):
     job = await Job.find_one(
-        Job.id == job_id,
+        Job.id == PydanticObjectId(job_id),
         Job.owner_id == str(current_user.id),
     )
     if not job:
@@ -62,7 +63,7 @@ async def delete_job(
     current_user: User = Depends(get_current_user),
 ):
     job = await Job.find_one(
-        Job.id == job_id,
+        Job.id == PydanticObjectId(job_id),
         Job.owner_id == str(current_user.id),
     )
     if not job:

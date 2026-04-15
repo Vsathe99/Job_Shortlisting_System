@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import List, Optional, Dict, Any
+from beanie import PydanticObjectId
 from app import schemas
 from app.auth import get_current_user
 from app.models import User, Job, Candidate
@@ -17,7 +18,7 @@ async def _resolve_candidate(candidate_id: str, current_user: User) -> Candidate
         raise HTTPException(status_code=404, detail="Candidate not found")
     
     # Then verify job ownership
-    job = await Job.find_one(Job.id == candidate.job_id, Job.owner_id == str(current_user.id))
+    job = await Job.find_one(Job.id == PydanticObjectId(candidate.job_id), Job.owner_id == str(current_user.id))
     if not job:
         raise HTTPException(status_code=403, detail="Access denied to this candidate")
         
@@ -37,7 +38,7 @@ async def list_candidates(
     # Find all job IDs owned by the user if job_id is not specified
     if job_id:
         # Verify job ownership
-        job = await Job.find_one(Job.id == job_id, Job.owner_id == str(current_user.id))
+        job = await Job.find_one(Job.id == PydanticObjectId(job_id), Job.owner_id == str(current_user.id))
         if not job:
             raise HTTPException(status_code=404, detail="Job not found or access denied")
         accessible_job_ids = [job_id]

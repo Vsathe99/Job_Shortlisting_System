@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from collections import Counter
+from beanie import PydanticObjectId
 from app import schemas
 from app.auth import get_current_user
 from app.models import User, Job, Candidate
@@ -17,7 +18,7 @@ async def get_analytics(
     # 1. Determine which candidates are accessible
     if job_id:
         # Verify job ownership
-        job = await Job.find_one(Job.id == job_id, Job.owner_id == str(current_user.id))
+        job = await Job.find_one(Job.id == PydanticObjectId(job_id), Job.owner_id == str(current_user.id))
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         candidates = await Candidate.find(Candidate.job_id == job_id).to_list()

@@ -2,6 +2,7 @@ import os
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, status
 from fastapi.responses import FileResponse
 from typing import List
+from beanie import PydanticObjectId
 from app import schemas
 from app.auth import get_current_user
 from app.models import User, Job, Candidate
@@ -25,9 +26,15 @@ async def upload_resumes(
     current_user: User = Depends(get_current_user),
 ):
     """Bulk upload resumes (PDF/DOCX) and run the ML pipeline."""
+    # Validate job_id format
+    try:
+        oid = PydanticObjectId(job_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {job_id}")
+
     # Validate job exists and belongs to current recruiter
     job = await Job.find_one(
-        Job.id == job_id,
+        Job.id == oid,
         Job.owner_id == str(current_user.id),
     )
     if not job:
@@ -73,7 +80,7 @@ async def serve_resume_file(
         raise HTTPException(status_code=404, detail="Resume file not found")
         
     # Verify job ownership via Candidate ID
-    job = await Job.find_one(Job.id == candidate.job_id, Job.owner_id == str(current_user.id))
+    job = await Job.find_one(Job.id == PydanticObjectId(candidate.job_id), Job.owner_id == str(current_user.id))
     if not job:
         raise HTTPException(status_code=403, detail="Access denied to this resume")
 

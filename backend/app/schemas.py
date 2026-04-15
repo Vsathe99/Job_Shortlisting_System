@@ -24,7 +24,7 @@ class UserLogin(BaseModel):
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-    id: PyObjectId = Field(alias="_id")
+    id: PyObjectId = Field(validation_alias="_id")
     email: str
     full_name: Optional[str]
     role: str
@@ -51,7 +51,7 @@ class JobCreate(BaseModel):
 class JobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-    id: PyObjectId = Field(alias="_id")
+    id: PyObjectId = Field(validation_alias="_id")
     owner_id: str
     title: str
     description: str
@@ -68,7 +68,7 @@ class JobOut(BaseModel):
 class CandidateOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-    id: PyObjectId = Field(alias="_id")
+    id: PyObjectId = Field(validation_alias="_id")
     job_id: str
     name: Optional[str]
     email: Optional[str]
